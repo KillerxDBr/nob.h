@@ -58,3 +58,19 @@ jobs:
         run: gcc -o nob.exe nob.c -Wall -Wextra
       - name: Run nob
         run: ./nob.exe
+  msys2-clang64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: git mingw-w64-clang-x86_64-clang
+      - name: Build nob
+        run: clang -o nob.exe nob.c -Wall -Wextra
+      - name: Run nob
+        run: ./nob.exe
