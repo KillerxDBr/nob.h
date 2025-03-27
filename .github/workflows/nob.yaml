@@ -8,7 +8,7 @@ jobs:
       - name: Clone GIT repo
         uses: actions/checkout@v4
       - name: Build nob
-        run: clang -o nob nob.c
+        run: clang -o nob nob.c -Wall -Wextra
       - name: Run nob
         run: ./nob
   ubuntu:
@@ -36,7 +36,7 @@ jobs:
         # https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-170#create-your-own-command-prompt-shortcut
         run: |
           call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat"
-          cl.exe ${{ matrix.hotreload }} -o nob.exe nob.c
+          cl.exe nob.c /W4 /D_CRT_SECURE_NO_WARNINGS
       - name: Run nob
         shell: cmd
         run: |
@@ -48,7 +48,9 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - name: Clone GIT repo
       - uses: actions/checkout@v4
+      - name: Setup MSYS2 UCRT64
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -64,7 +66,9 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - name: Clone GIT repo
       - uses: actions/checkout@v4
+      - name: Setup MSYS2 CLANG64
       - uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
