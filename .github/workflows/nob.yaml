@@ -48,13 +48,12 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
           install: git mingw-w64-ucrt-x86_64-gcc
-      - name: Clone GIT repo
-      - uses: actions/checkout@v4
       - name: Build nob
         run: gcc -o nob.exe nob.c -Wall -Wextra
       - name: Run nob
@@ -65,13 +64,12 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
           update: true
           install: git mingw-w64-clang-x86_64-clang
-      - name: Clone GIT repo
-      - uses: actions/checkout@v4
       - name: Build nob
         run: clang -o nob.exe nob.c -Wall -Wextra
       - name: Run nob
