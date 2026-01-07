@@ -918,6 +918,33 @@ NOBDEF bool nob_win32_wcs_to_cstr(const wchar_t *wcs, int wLen, char *cstr, int 
     return true;
 }
 
+NOBDEF char *nob_temp_win32_wcs_to_cstr(const wchar_t *wcs, int wLen) {
+    const size_t mark = nob_temp_save();
+    char *result = NULL;
+
+    int len = nob_win32_wcs_to_cstr_len(wcs, wLen);
+    if (len < 0)
+        return NULL;
+    if (wcs[wLen - 1] != 0)
+        len += 1;
+
+    result = (char *)nob_temp_alloc(len);
+
+    if (result == NULL) {
+        nob_temp_rewind(mark);
+        return NULL;
+    }
+
+    if (!nob_win32_wcs_to_cstr(wcs, wLen, result, len)) {
+        nob_temp_rewind(mark);
+        return NULL;
+    }
+
+    result[len-1] = '\0';
+
+    return result;
+}
+
 #endif // _WIN32
 
 // The implementation idea is stolen from https://github.com/zhiayang/nabs
