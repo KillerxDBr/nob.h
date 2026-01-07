@@ -1259,9 +1259,10 @@ static Nob_Proc nob__cmd_start_process(Nob_Cmd cmd, Nob_Fd *fdin, Nob_Fd *fdout,
 #endif // NOB_NO_ECHO
 
 #ifdef _WIN32
-    // https://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+    const size_t mark = nob_temp_save();
 
-    STARTUPINFOA siStartInfo;
+    // https://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+    STARTUPINFOW siStartInfo;
     ZeroMemory(&siStartInfo, sizeof(siStartInfo));
     siStartInfo.cb = sizeof(siStartInfo);
     // NOTE: theoretically setting NULL to std handles should not be a problem
@@ -1278,7 +1279,29 @@ static Nob_Proc nob__cmd_start_process(Nob_Cmd cmd, Nob_Fd *fdin, Nob_Fd *fdout,
     Nob_String_Builder quoted = {0};
     nob__win32_cmd_quote(cmd, &quoted);
     nob_sb_append_null(&quoted);
-    BOOL bSuccess = CreateProcessA(NULL, quoted.items, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo);
+    
+    wchar_t *wCmdLine = NULL;
+    // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+    // per MSDN ref of `lpCommandLine`, "The maximum length of this string is 32,767 characters"
+    int cchCmdLine = MultiByteToWideChar(CP_UTF8, 0, quoted.items, -1, NULL, 0);
+    if (cchCmdLine == 0 || cchCmdLine > 32767) {
+        DWORD err = GetLastError();
+        nob_log(NOB_ERROR, "Could not convert command line to wide string: %s", nob_win32_error_message(err ? err : ERROR_FILENAME_EXCED_RANGE));
+        nob_sb_free(quoted);
+        return NOB_INVALID_PROC;
+    }
+    wCmdLine = (wchar_t *)nob_temp_alloc(cchCmdLine * sizeof(wchar_t));
+    NOB_ASSERT(wCmdLine != NULL && "Increase NOB_TEMP_CAPACITY");
+
+    if (MultiByteToWideChar(CP_UTF8, 0, quoted.items, -1, wCmdLine, cchCmdLine) == 0) {
+        nob_log(NOB_ERROR, "Could not convert command line to wide string: %s", nob_win32_error_message(GetLastError()));
+        nob_temp_rewind(mark);
+        nob_sb_free(quoted);
+        return NOB_INVALID_PROC;
+    }
+
+    BOOL bSuccess = CreateProcessW(NULL, wCmdLine, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo);
+    nob_temp_rewind(mark);
     nob_sb_free(quoted);
 
     if (!bSuccess) {
