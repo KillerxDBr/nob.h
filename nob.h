@@ -2571,9 +2571,13 @@ NOBDEF char *nob_temp_running_executable_path(void)
     if (length < 0) return "";
     return nob_temp_strndup(buf, length);
 #elif defined(_WIN32)
-    char buf[MAX_PATH];
-    int length = GetModuleFileNameA(NULL, buf, MAX_PATH);
-    return nob_temp_strndup(buf, length);
+    wchar_t buf[MAX_PATH];
+    if(!GetModuleFileNameW(NULL, buf, MAX_PATH)) return "";
+
+    char *tmp = nob_temp_win32_wcs_to_cstr(buf, -1);
+    if(tmp == NULL) return "";
+
+    return tmp;
 #elif defined(__APPLE__)
     char buf[4096];
     uint32_t size = NOB_ARRAY_LEN(buf);
