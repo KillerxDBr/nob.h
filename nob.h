@@ -2468,17 +2468,7 @@ NOBDEF const char *nob_get_current_dir_temp(void)
         return NULL;
     }
 
-    int buffSize = nob_win32_wcs_to_cstr_len(wBuffer, -1);
-    if (buffSize == -1) {
-        // TODO: Error Message
-        return NULL;
-    }
-
-    char *buffer = (char *)nob_temp_alloc((size_t)buffSize);
-    if (!nob_win32_wcs_to_cstr(wBuffer, -1, buffer, buffSize)) {
-        // TODO: Error Message
-        return NULL;
-    }
+    char *buffer = nob_temp_win32_wcs_to_cstr(wBuffer, -1);
 
     return buffer;
 #else
