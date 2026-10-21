@@ -13,9 +13,9 @@
 #if defined(__cplusplus)
     #if defined(_MSC_VER)
         #  if !defined(__clang__)
-            #  define nob_cc_flags(cmd) cmd_append(cmd, "-x", "c++", "-Wall", "-Wextra", "-Wno-missing-field-initializers", "-Wswitch-enum", "-std=c++20", "-g", "-D_CRT_SECURE_NO_WARNINGS", "-I.")
-        # else
             #  define nob_cc_flags(cmd) cmd_append(cmd, "/std:c++20", "/TP", "/W4", "/nologo", "/D_CRT_SECURE_NO_WARNINGS", "-I.")
+        # else
+            #  define nob_cc_flags(cmd) cmd_append(cmd, "-x", "c++", "-Wall", "-Wextra", "-Wno-missing-field-initializers", "-Wswitch-enum", "-std=c++20", "-g", "-D_CRT_SECURE_NO_WARNINGS", "-I.")
         #endif
     #else
         #define nob_cc(cmd) cmd_append(cmd, "cc", "-x", "c++")
