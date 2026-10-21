@@ -158,14 +158,14 @@
 
 #ifdef _WIN32
 #    define WIN32_LEAN_AND_MEAN
-#    define _WINUSER_
-#    define _WINGDI_
-#    define _IMM_
-#    define _WINCON_
+#    define NOUSER
+#    define NOGDI
+#    define NOIME
+#    define NOAPISET
 #    include <windows.h>
 #    include <direct.h>
 #    include <io.h>
-#    include <shellapi.h>
+#    include <consoleapi2.h>
 #else
 #    ifdef __APPLE__
 #        include <mach-o/dyld.h>

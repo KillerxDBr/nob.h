@@ -35,9 +35,18 @@ bool delete_directory_recursively(const char *dir_path)
     return walk_dir(dir_path, delete_walk_entry, .post_order = true);
 }
 
+#if defined(_WIN32) && (!defined(_MSC_VER) || defined(_MSC_VER) && defined(__clang__))
+#define EXE ".exe"
+#else
+#define EXE ""
+#endif
+
 bool build_and_run_test(const char *test_name, bool record)
 {
     bool result = true;
+
+    const char *dir = get_current_dir_temp();
+
     Cmd cmd = {0};
     String_Builder src = {0};
     String_Builder dst = {0};
@@ -52,7 +61,7 @@ bool build_and_run_test(const char *test_name, bool record)
     const char *dst_stdout_path  = temp_sprintf("%s%s.stdout.txt", TESTS_FOLDER, test_name);
     const char *test_stdout_path = temp_sprintf("../%s.stdout.txt", test_name);
 #endif // _WIN32
-    const char *bin_path         = temp_sprintf("%s%s", BUILD_FOLDER TESTS_FOLDER, test_name);
+    const char *bin_path         = temp_sprintf("%s%s" EXE, BUILD_FOLDER TESTS_FOLDER, test_name);
     const char *src_path         = temp_sprintf("%s%s.c", TESTS_FOLDER, test_name);
     const char *test_cwd_path    = temp_sprintf("%s%s%s.cwd", BUILD_FOLDER, TESTS_FOLDER, test_name);
 
@@ -102,6 +111,9 @@ defer:
     free(dst.items);
     free(src.items);
     free(cmd.items);
+
+    set_current_dir(dir); // If a test fail 'before set_current_dir("../../../")' the path keeps incorrect and fail subsequent tests
+
     return result;
 }
 
