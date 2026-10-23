@@ -106,9 +106,6 @@
 #    ifndef _CRT_SECURE_NO_WARNINGS
 #        define _CRT_SECURE_NO_WARNINGS (1)
 #    endif // _CRT_SECURE_NO_WARNINGS
-#    ifndef UNICODE
-#        define UNICODE
-#    endif // UNICODE
 #endif //  _WIN32
 
 #ifndef NOBDEF
@@ -164,15 +161,8 @@
 #    define NOUSER
 #    define NOGDI
 #    define NOIME
-#    define NOAPISET
 #    include <windows.h>
-#    include <direct.h>
 #    include <io.h>
-#    include <consoleapi2.h>
-#    include <stringapiset.h>
-// TODO: Test more win32 compilers
-// I remember at least one that didnt have stringsetapi.h
-// And defined Wide String convertion functions in winnls.h
 #else
 #    ifdef __APPLE__
 #        include <mach-o/dyld.h>
@@ -1184,10 +1174,25 @@ static char nob_temp[NOB_TEMP_CAPACITY] = {0};
 NOBDEF bool nob_mkdir_if_not_exists(const char *path)
 {
 #ifdef _WIN32
-    int result = _mkdir(path);
+    WCHAR wPath[MAX_PATH];
+    if (!nob__cstr_to_wcs(path, -1, wPath, MAX_PATH)) {
+        nob_log(NOB_ERROR, "could not create directory `%s`", path);
+        return false;
+    }
+
+    if (!CreateDirectoryW(wPath, NULL)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_ALREADY_EXISTS) {
+#ifndef NOB_NO_ECHO
+            nob_log(NOB_INFO, "directory `%s` already exists", path);
+#endif // NOB_NO_ECHO
+            return true;
+        }
+        nob_log(NOB_ERROR, "could not create directory `%s`: %s", path, strerror(errno));
+        return false;
+    }
 #else
     int result = mkdir(path, 0755);
-#endif
     if (result < 0) {
         if (errno == EEXIST) {
 #ifndef NOB_NO_ECHO
@@ -1198,7 +1203,7 @@ NOBDEF bool nob_mkdir_if_not_exists(const char *path)
         nob_log(NOB_ERROR, "could not create directory `%s`: %s", path, strerror(errno));
         return false;
     }
-
+#endif
 #ifndef NOB_NO_ECHO
     nob_log(NOB_INFO, "created directory `%s`", path);
 #endif // NOB_NO_ECHO
@@ -1625,7 +1630,7 @@ static Nob_Proc nob__cmd_start_process(Nob_Cmd cmd, Nob_Fd *fdin, Nob_Fd *fdout,
     int n = nob__cstr_to_wcs(quoted.items, -1, cmdLine, NOB_ARRAY_LEN(cmdLine));
     nob_sb_free(quoted);
 
-    if(!n) {
+    if (!n) {
         nob_log(NOB_ERROR, "Could not create child process for \"%s\"", cmd.items[0]);
         return NOB_INVALID_PROC;
     }
@@ -1863,30 +1868,33 @@ NOBDEF bool nob_proc_wait(Nob_Proc proc)
     if (proc == NOB_INVALID_PROC) return false;
 
 #ifdef _WIN32
-    DWORD result = WaitForSingleObject(
+    bool result = true;
+
+    DWORD wait = WaitForSingleObject(
                        proc,    // HANDLE hHandle,
                        INFINITE // DWORD  dwMilliseconds
                    );
 
-    if (result == WAIT_FAILED) {
+    if (wait == WAIT_FAILED) {
         nob_log(NOB_ERROR, "could not wait on child process: %s", nob_win32_error_message(GetLastError()));
-        return false;
+        nob_return_defer(false);
     }
 
     DWORD exit_status;
     if (!GetExitCodeProcess(proc, &exit_status)) {
         nob_log(NOB_ERROR, "could not get process exit code: %s", nob_win32_error_message(GetLastError()));
-        return false;
+        nob_return_defer(false);
     }
 
     if (exit_status != 0) {
         nob_log(NOB_ERROR, "command exited with exit code %lu", exit_status);
-        return false;
+        nob_return_defer(false);
     }
 
+defer:
     CloseHandle(proc);
 
-    return true;
+    return result;
 #else
     for (;;) {
         int wstatus = 0;
@@ -1917,37 +1925,40 @@ NOBDEF bool nob_proc_wait(Nob_Proc proc)
 
 static int nob__proc_wait_async(Nob_Proc proc, int ms)
 {
-    if (proc == NOB_INVALID_PROC) return false;
+    if (proc == NOB_INVALID_PROC) return -1;
 
 #ifdef _WIN32
-    DWORD result = WaitForSingleObject(
+    int result = 1;
+
+    DWORD wait = WaitForSingleObject(
                        proc,    // HANDLE hHandle,
                        ms       // DWORD  dwMilliseconds
                    );
 
-    if (result == WAIT_TIMEOUT) {
+    if (wait == WAIT_TIMEOUT) {
         return 0;
     }
 
-    if (result == WAIT_FAILED) {
+    if (wait == WAIT_FAILED) {
         nob_log(NOB_ERROR, "could not wait on child process: %s", nob_win32_error_message(GetLastError()));
-        return -1;
+        nob_return_defer(-1);
     }
 
     DWORD exit_status;
     if (!GetExitCodeProcess(proc, &exit_status)) {
         nob_log(NOB_ERROR, "could not get process exit code: %s", nob_win32_error_message(GetLastError()));
-        return -1;
+        nob_return_defer(-1);
     }
 
     if (exit_status != 0) {
         nob_log(NOB_ERROR, "command exited with exit code %lu", exit_status);
-        return -1;
+        nob_return_defer(-1);
     }
 
+defer:
     CloseHandle(proc);
 
-    return 1;
+    return result;
 #else
     long ns = ms*1000*1000;
     struct timespec duration = {
@@ -2319,7 +2330,18 @@ NOBDEF bool nob_write_entire_file(const char *path, const void *data, size_t siz
     bool result = true;
 
     const char *buf = NULL;
-    FILE *f = fopen(path, "wb");
+    FILE *f = NULL;
+#ifdef _WIN32
+    WCHAR wPath[MAX_PATH];
+    if(!nob__cstr_to_wcs(path, -1, wPath, MAX_PATH)) {
+        nob_log(NOB_ERROR, "Could not open file %s for writing", path);
+        return false;
+    }
+
+    f = _wfopen(wPath, L"wb");
+#else
+    f = fopen(path, "wb");
+#endif
     if (f == NULL) {
         nob_log(NOB_ERROR, "Could not open file %s for writing: %s\n", path, strerror(errno));
         nob_return_defer(false);
@@ -2689,9 +2711,20 @@ NOBDEF bool nob_read_entire_file(const char *path, Nob_String_Builder *sb)
 {
     bool result = true;
 
-    FILE *f = fopen(path, "rb");
+    FILE *f = NULL;
+#ifdef _WIN32
+    WCHAR wPath[MAX_PATH];
+    if(!nob__cstr_to_wcs(path, -1, wPath, MAX_PATH)) {
+        nob_log(NOB_ERROR, "Could not read file %s", path);
+        return false;
+    }
+
+    f = _wfopen(wPath, L"rb");
+#else
+    f = fopen(path, "rb");
+#endif
     size_t new_count = 0;
-    long long m = 0;
+    int64_t m = 0;
     if (f == NULL)                 nob_return_defer(false);
     if (fseek(f, 0, SEEK_END) < 0) nob_return_defer(false);
 #ifndef _WIN32
@@ -2949,7 +2982,7 @@ NOBDEF const char *nob_get_current_dir_temp(void)
         nob_log(NOB_ERROR, "could not get current directory");
         return NULL;
     }
-    
+
     char *buffer = (char*) nob_temp_alloc(nBufferLength);
     if(!nob__wcs_to_cstr(wPath, -1, buffer, nBufferLength)) {
         nob_log(NOB_ERROR, "could not get current directory");
@@ -3005,10 +3038,10 @@ NOBDEF char *nob_temp_dir_name(const char *path)
     return nob_temp_strndup(path, i + 1);
 #else
     if (!path) path = ""; // Treating NULL as empty.
-    char *drive = (char*) nob_temp_alloc(_MAX_DRIVE);
-    char *dir   = (char*) nob_temp_alloc(_MAX_DIR);
+    char drive[_MAX_DRIVE];
+    char dir[_MAX_DIR];
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
-    errno_t ret = _splitpath_s(path, drive, _MAX_DRIVE, dir, _MAX_DIR, NULL, 0, NULL, 0);
+    errno_t ret = _splitpath_s(path, drive, sizeof(drive), dir, sizeof(dir), NULL, 0, NULL, 0);
     NOB_ASSERT(ret == 0);
     return nob_temp_sprintf("%s%s", drive, dir);
 #endif // _WIN32
@@ -3028,10 +3061,10 @@ NOBDEF char *nob_temp_file_name(const char *path)
     return s+i;
 #else
     if (!path) path = ""; // Treating NULL as empty.
-    char *fname = (char*)nob_temp_alloc(_MAX_FNAME);
-    char *ext   = (char*)nob_temp_alloc(_MAX_EXT);
+    char fname[_MAX_FNAME];
+    char ext[_MAX_EXT];
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
-    errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
+    errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, fname, sizeof(fname), ext, sizeof(ext));
     NOB_ASSERT(ret == 0);
     return nob_temp_sprintf("%s%s", fname, ext);
 #endif // _WIN32
@@ -3043,11 +3076,11 @@ NOBDEF char *nob_temp_file_ext(const char *path)
     return strrchr(nob_temp_file_name(path), '.');
 #else
     if (!path) path = ""; // Treating NULL as empty.
-    char *ext = (char*)nob_temp_alloc(_MAX_EXT);
+    char ext[_MAX_EXT];
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
-    errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, NULL, 0, ext, _MAX_EXT);
+    errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, NULL, 0, ext, sizeof(ext));
     NOB_ASSERT(ret == 0);
-    return ext;
+    return nob_temp_strdup(ext);
 #endif // _WIN32
 }
 
