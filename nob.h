@@ -100,6 +100,11 @@
       - NOB_WIN32_ERR_MSG_SIZE - Redefine the capacity of the buffer for error message on Windows.
 */
 
+#if defined(_WIN32) && defined(_MSC_VER)
+#    pragma warning(push)
+#    pragma warning(disable: 4201 4709 4702)
+#endif
+
 #ifndef NOB_H_
 #define NOB_H_
 #ifdef _WIN32
@@ -3123,6 +3128,10 @@ NOBDEF char *nob_temp_running_executable_path(void)
 }
 
 #endif // NOB_IMPLEMENTATION
+
+#if defined(_WIN32) && defined(_MSC_VER)
+#    pragma warning(pop)
+#endif // defined(_WIN32) && defined(_MSC_VER)
 
 #ifndef NOB_STRIP_PREFIX_GUARD_
 #define NOB_STRIP_PREFIX_GUARD_
